@@ -1,38 +1,53 @@
 ﻿using System.Collections.Generic;
+using System.Diagnostics;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using System.Text;
 
-partial class Program
+class Program
 {
 
     /// <summary>
     /// Список слов для поиска самой длинной последовательности повторяющихся символов.
     /// </summary>
-    private static List<string> words;
+    private static string[] words;
 
     static async Task Main()
     {
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        long memoryBefore = GC.GetTotalMemory(true); // Память до выполнения
+
         words = ReadWords();
         var result = FindLongestSequence(words);
         Console.WriteLine("Максимальная длина подстроки из одного символа ({0}): {1}", result.Key, result.Value);
         words = await ReadWordsFromFile();
         result = FindLongestSequence(words);
         Console.WriteLine("Максимальная длина подстроки из одного символа ({0}): {1}", result.Key, result.Value);
+
+        long memoryAfter = GC.GetTotalMemory(true); // Память после выполнения
+        stopwatch.Stop();
+        Console.WriteLine($"Использовано памяти: {(double)((memoryAfter - memoryBefore) / 1000000)} мегабайт");
+        Console.WriteLine($"Время выполнения: {(stopwatch.ElapsedMilliseconds)} мс");
         Console.ReadLine();
     }
+
     /// <summary>
     /// Читаем данные из массива.
     /// </summary>
     /// <returns></returns>
-    static List<string> ReadWords()
+    static string[] ReadWords()
     {
         string[] input = { "caa", "aac", "ccc", "bbbb", "fff", "faf", "ddd", "da", "ccd" };
-        return input.ToList();
+        return input;
     }
+
     /// <summary>
     /// Читаем данные из файла.
     /// </summary>
     /// <returns></returns>
-    static async Task<List<string>> ReadWordsFromFile()
+    static async Task<string[]> ReadWordsFromFile()
     {
         List<string> input = new List<string>();
         using (StreamReader reader = new StreamReader("Data (1).txt", true))
@@ -44,7 +59,7 @@ partial class Program
                     input.Add(line);
             }
         }
-        return input;
+        return input.ToArray();
     }
 
     /// <summary>
@@ -52,10 +67,12 @@ partial class Program
     /// </summary>
     /// <param name="words"></param>
     /// <returns></returns>
-    private static KeyValuePair<string, int> FindLongestSequence(List<string> words)
+    private static KeyValuePair<string, int> FindLongestSequence(string[] words)
     {
         var groupWords = GetGroupWordsDiconary(words);
-        return GetGroupWordsLongestSequenceLength(groupWords);
+        var result = GetGroupWordsLongestSequenceLength(groupWords);
+
+        return new KeyValuePair<string, int>(result.Key, result.Value);
     }
 
     /// <summary>
@@ -63,7 +80,7 @@ partial class Program
     /// </summary>
     /// <param name="words"></param>
     /// <returns></returns>
-    private static Dictionary<char, List<Word>> GetGroupWordsDiconary(List<string> words)
+    private static Dictionary<char, List<Word>> GetGroupWordsDiconary(string[] words)
     {
         int index = 0;
 
@@ -73,7 +90,25 @@ partial class Program
         {
             foreach (char c in word.Distinct())
             {
-                var keyValuePair = new Word(word, index, MaxLetterLength(word, c));
+                int startLetterCount = 0;
+                int endLetterCount = 0;
+                bool firstPrioritry = false;
+
+                if (word.StartsWith(c))
+                    startLetterCount = CountLeadingRepeatingCharacters(word, c);
+
+                if (word.EndsWith(c))
+                    endLetterCount = CountLeadingRepeatingCharactersEndWord(word, c);
+
+                if (startLetterCount > 0 && endLetterCount > 0)
+                {
+                    if (startLetterCount >= endLetterCount)
+                        firstPrioritry = true;
+                }
+
+                int maxLetterLength = MaxLetterLength(word, c);
+
+                var keyValuePair = new Word(index, word.Length, maxLetterLength, startLetterCount, endLetterCount);
                 if (groupWords.ContainsKey(c))
                     groupWords[c].Add(keyValuePair);
                 else
@@ -84,6 +119,7 @@ partial class Program
         }
         return groupWords;
     }
+
     /// <summary>
     /// Получаем длину максимальной последовательности одинаковых символов
     /// </summary>
@@ -92,15 +128,15 @@ partial class Program
     private static KeyValuePair<string, int> GetGroupWordsLongestSequenceLength(Dictionary<char, List<Word>> groupWords)
     {
         int maxLength = 0;
-        string maxSequence = string.Empty;
+        string maxSequence = null;
         KeyValuePair<string, int> result;
 
         foreach (var groupWord in groupWords)
         {
             char letter = groupWord.Key;
             var words = groupWord.Value;
+
             //Сортируем слова по первому и последнему символу, чтобы правильно соединять слова
-            words = words.OrderByDescending(w => w.Value).ToList();
             result = FindMaxSymbolPermutation(words, letter);
 
             if (result.Value > maxLength)
@@ -112,41 +148,48 @@ partial class Program
         return new KeyValuePair<string, int>(maxSequence, maxLength);
     }
 
-    private static KeyValuePair<string, int> FindMaxSymbolPermutation(List<Word> words, char ch)
+    private static KeyValuePair<string, int> FindMaxSymbolPermutation(IEnumerable<Word> wordsWithSymbol, char ch)
     {
         //Находим самую длинную подстроку, которая заканчивается с ch
-        var firstWord = words.Where(w => w.Value.EndsWith(ch) && w.Value.Length != w.MaxLetterLength)
-            .OrderByDescending(w =>
-                CountLeadingRepeatingCharactersEndWord(w.Value, ch))
-            .FirstOrDefault();
+        var firstWord = wordsWithSymbol.Where(w => w.EndLetterCount >= w.StartLetterCount &&
+                                                   w.EndLetterCount > 0 &&
+                                                   w.WordLength != w.MaxLetterLength)
+            .OrderByDescending(w => w.EndLetterCount).FirstOrDefault();
 
         //Находим самую длинную подстроку, которая начинается  с ch
-        var lastWord = words.Where(w => w.Value.StartsWith(ch) &&
-                                        w.Value.Length != w.MaxLetterLength &&
-                                        w.Index != firstWord?.Index)
-            .OrderByDescending(w =>
-                CountLeadingRepeatingCharacters(w.Value, ch))
+        var lastWord = wordsWithSymbol.Where(w => w.StartLetterCount >= w.EndLetterCount &&
+                                                  w.StartLetterCount > 0 &&
+                                                  w.WordLength != w.MaxLetterLength &&
+                                                  w.Index != firstWord?.Index)
+            .OrderByDescending(w => w.StartLetterCount)
             .FirstOrDefault();
 
+        int maxRepeat = 0;
+
         //Находим все остальные строки (все символы совпдают с ch)
-        var middleWords = words.Where(w => w.Value.Length == w.MaxLetterLength).Select(w => w.Value).ToList();
+        var middleWordsCount = wordsWithSymbol
+            .Where(w => w.WordLength == w.MaxLetterLength)
+            .Select(w => w.WordLength)
+            .Sum();
 
         int maxLength = 0;
         string maxSequence = string.Empty;
-        int result = 0;
+        int result = middleWordsCount;
 
-        var mergeWords = MergeWords(firstWord?.Value, middleWords, lastWord?.Value);
-        result = MaxLetterLength(mergeWords, ch);
+        if (firstWord?.EndLetterCount != null)
+            result += firstWord.EndLetterCount;
+        if (lastWord?.EndLetterCount != null)
+            result += lastWord.StartLetterCount;
         if (result > maxLength)
         {
             maxLength = result;
-            maxSequence = mergeWords;
+            maxSequence = MergeWords(firstWord, new string(ch, middleWordsCount), lastWord);
         }
 
         //Находим самую длинную строку повторяющихся сивмолов.
-        var maxLetterLength = words.OrderByDescending(w => w.MaxLetterLength).FirstOrDefault();
+        var maxLetterLength = wordsWithSymbol.OrderByDescending(w => w.MaxLetterLength).FirstOrDefault();
         if (maxLetterLength.MaxLetterLength > maxLength)
-            return new KeyValuePair<string, int>(maxLetterLength.Value,
+            return new KeyValuePair<string, int>(words[maxLetterLength.Index],
                                                  maxLetterLength.MaxLetterLength);
 
         return new KeyValuePair<string, int>(maxSequence, maxLength);
@@ -155,37 +198,39 @@ partial class Program
     /// <summary>
     /// Объединяем слова для конкретного символа, учитывая возможные стыки одинаковых символов.
     /// </summary>
-    private static string MergeWords(string firstWord, List<string> middleWords, string lastWord)
+    private static string MergeWords(Word firstWord, string middleWords, Word lastWord)
     {
         StringBuilder mergedWords = new StringBuilder();
         if (firstWord != null)
-            mergedWords.Append(firstWord);
+            mergedWords.Append(words[firstWord.Index]);
 
-        foreach (var item in middleWords)
-            mergedWords.Append(item);
+        if (middleWords != null)
+            mergedWords.Append(middleWords);
 
         if (lastWord != null)
-            mergedWords.Append(lastWord);
+            mergedWords.Append(words[lastWord.Index]);
+
         return mergedWords.ToString();
     }
 
-    /// <summary>
-    /// Проходим по строке,  ищем самую длинную повторяющаяся последовательность символа char
-    /// </summary>
-    /// <param name="str">строка символов</param>
-    /// <param name="letter">повторяющейся символ</param>
-    /// <returns>Максимальное количество повторяющихся символов letter</returns>
     private static int MaxLetterLength(string str, char letter)
     {
-        int maxLen = 0;
-        int currentLen = 0;
-        foreach (char c in str)
+        if (string.IsNullOrEmpty(str)) return 0;
+
+        int maxLen = 0, currentLen = 0;
+        ReadOnlySpan<char> span = str.AsSpan();
+
+        foreach (char c in span)
         {
-            if (c.Equals(letter))
+            if (c == letter)
+            {
                 currentLen++;
+                maxLen = Math.Max(maxLen, currentLen);
+            }
             else
+            {
                 currentLen = 0;
-            maxLen = Math.Max(maxLen, currentLen);
+            }
         }
         return maxLen;
     }
@@ -196,7 +241,7 @@ partial class Program
     /// <param name="word">строка символов</param>
     /// <param name="letter">повторяющейся символ</param>
     /// <returns></returns>
-    static int CountLeadingRepeatingCharacters(string word, char letter)
+    private static int CountLeadingRepeatingCharacters(string word, char letter)
     {
         if (string.IsNullOrEmpty(word))
             return 0;
@@ -210,7 +255,6 @@ partial class Program
             else
                 break;
         }
-
         return count;
     }
 
@@ -220,7 +264,7 @@ partial class Program
     /// <param name="word">строка символов</param>
     /// <param name="letter">повторяющейся символ</param>
     /// <returns></returns>
-    static int CountLeadingRepeatingCharactersEndWord(string word, char letter)
+    private static int CountLeadingRepeatingCharactersEndWord(string word, char letter)
     {
         if (string.IsNullOrEmpty(word))
             return 0;
@@ -234,7 +278,6 @@ partial class Program
             else
                 break;
         }
-
         return count;
     }
 }

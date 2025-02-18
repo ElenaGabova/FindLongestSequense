@@ -1,16 +1,24 @@
-﻿partial class Program
+﻿
+public class Word
 {
-    public class Word
-    {
-        public string Value;
-        public int Index;
-        public int MaxLetterLength;
+    public int Index;
+    public int MaxLetterLength;
+    public int StartLetterCount;
+    public int EndLetterCount;
+    public int WordLength;
 
-        public Word(string value, int index, int maxLetterLength)
-        {
-            Value = value;
-            Index = index;
-            MaxLetterLength = maxLetterLength;
-        }
+    public Word(int index, int wordLength, int maxLetterLength, int startLetterCount, int endLetterCount)
+    {
+        Index = index;
+        MaxLetterLength = maxLetterLength;
+        StartLetterCount = startLetterCount;
+        EndLetterCount = endLetterCount;
+        WordLength = wordLength;
+    }
+    public Word(string value, int index, int wordLength, int maxLetterLength)
+    {
+        Index = index;
+        MaxLetterLength = maxLetterLength;
+        WordLength = wordLength;
     }
 }
